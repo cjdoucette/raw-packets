@@ -376,7 +376,6 @@ int main(int argc, char *argv[])
 	/* Send packet */
 	i = 0;
 	int mbps100 = strcmp(argv[2], "100mbps") == 0;
-	int mbps500 = strcmp(argv[2], "500mbps") == 0;
 	int gbps1 = strcmp(argv[2], "1gbps") == 0;
 	int gbps2 = strcmp(argv[2], "2gbps") == 0;
 	int gbps3 = strcmp(argv[2], "3gbps") == 0;
@@ -400,18 +399,6 @@ int main(int argc, char *argv[])
 			}
 			if (i % 4 == 0)
 				usleep(25);
-		} else if (mbps500) {
-			iphdr->ip_src.s_addr = arr[i % 1000];
-			iphdr->ip_sum = 0;
-			iphdr->ip_sum = checksum_ip(iphdr);
-			checksum_l4((uint8_t *)bytes);
-			if (sendto(sockfd, bytes, sizeof(bytes), 0,
-					(struct sockaddr*)&socket_address,
-					sizeof(struct sockaddr_ll)) < 0) {
-				printf("Send failed\n");
-			}
-			if (i % 30 == 0)
-				usleep(1);
 		} else if (gbps1) {
 			iphdr->ip_src.s_addr = arr[i % 1000];
 			iphdr->ip_sum = 0;
@@ -422,7 +409,7 @@ int main(int argc, char *argv[])
 					sizeof(struct sockaddr_ll)) < 0) {
 				printf("Send failed\n");
 			}
-			if (i % 40 == 0)
+			if (i % 300 == 0)
 				usleep(1);
 		} else if (gbps2) {
 			/* Can only achieve 2 Gbps when run twice. */
