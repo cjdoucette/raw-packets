@@ -1,6 +1,5 @@
 #!/bin/bash
-#sudo tcpdump -i ens5 '((tcp[tcpflags] == tcp-syn) or (tcp[tcpflags] == tcp-ack)) and port 1234' -n > output.txt &
-sudo tcpdump -i ens5 'port 1234' -n > output.txt &
+sudo tcpdump -i ens5 'port 1234' -n > legit_log.txt &
 sleep 2
 for i in {1..1000}
 do
