@@ -365,49 +365,15 @@ int main(int argc, char *argv[])
 0x0a    
 	};
 
-	char buffer[64];
-	uint8_t daddr[6];
-	FILE *f = fopen("/tmp/daddr", "r");
-	if (fgets(buffer, sizeof(buffer), f) == NULL) {
-		printf("WARNING, couldn't read destination MAC address\n");
-		fclose(f);
-		return 0;
-	}
-	fclose(f);
-	sscanf(buffer, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
-		&daddr[0], &daddr[1], &daddr[2],
-		&daddr[3], &daddr[4], &daddr[5]);
-
-	uint8_t saddr[6];
-	f = fopen("/tmp/saddr", "r");
-	if (fgets(buffer, sizeof(buffer), f) == NULL) {
-		printf("WARNING, couldn't read source MAC address\n");
-		fclose(f);
-		return 0;
-	}
-	fclose(f);
-	sscanf(buffer, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
-		&saddr[0], &saddr[1], &saddr[2],
-		&saddr[3], &saddr[4], &saddr[5]);
-
-	if (strstr(argv[2], "gibps") == NULL && strstr(argv[2], "mibps") == NULL) {
+	float speed_mibps = 0;
+	sscanf(argv[2], "%f", &speed_mibps);
+	if (strstr(argv[2], "gibps") != NULL) {
+		speed_mibps *= 1024;
+	} else if (strstr(argv[2], "mibps") == NULL) {
 		printf("Did not recognize speed: %s\n", argv[2]);
 		return 0;
 	}
-
-	char params_path[32];
-	unsigned int pkt_size;
-	unsigned int delay;
-	unsigned int delay_iter;
-	snprintf(params_path, sizeof(params_path), "/home/ubuntu/%s", argv[2]);
-	f = fopen(params_path, "r");
-	if (fgets(buffer, sizeof(buffer), f) == NULL) {
-		printf("WARNING, couldn't read calibrated parameters\n");
-		fclose(f);
-		return 0;
-	}
-	fclose(f);
-	sscanf(buffer, "%u %u %u", &pkt_size, &delay, &delay_iter);
+	printf("Speed is: %f Mibps\n", speed_mibps);
 
 	/* Come up with random source addresses. */
 	uint32_t arr[1000];
@@ -416,30 +382,168 @@ int main(int argc, char *argv[])
 		arr[i] = rand();
 	}
 
-	char *pkt_sizes[4] = {bytes, bytes2, bytes3, bytes4};
-	unsigned int actual_size[4] = {sizeof(bytes), sizeof(bytes2), sizeof(bytes3), sizeof(bytes4)};
-	char *pkt = pkt_sizes[pkt_size];
-	for (i = 0; i < sizeof(daddr); i++) {
-		pkt[i] = daddr[i];
-		pkt[i + 6] = saddr[i];
-	}
+	/* Calibrate sender. */
+	float error = .05;
+	float range_min = speed_mibps - (speed_mibps * error);
+	float range_max = speed_mibps + (speed_mibps * error);
 
-	struct ip *iphdr = (struct ip *)(pkt_sizes[pkt_size] + 34);
-	i = 0;
-	while (1) {
-		iphdr->ip_src.s_addr = arr[i % 1000];
-		iphdr->ip_sum = 0;
-		iphdr->ip_sum = checksum_ip(iphdr);
-		checksum_l4((uint8_t *)pkt);
-		if (sendto(sockfd, pkt, actual_size[pkt_size], 0,
-				(struct sockaddr*)&socket_address,
-				sizeof(struct sockaddr_ll)) < 0) {
-			printf("Send failed\n");
+	char *pkt_sizes[4] = {bytes, bytes2, bytes3, bytes4};
+	unsigned int pkt_size = 0;
+	unsigned int actual_size[4] = {sizeof(bytes), sizeof(bytes2), sizeof(bytes3), sizeof(bytes4)};
+	unsigned int delay_iter = 1;
+	char *pkt;
+	struct ip *iphdr;
+	bool delay = false;
+	bool first = true;
+	bool second = false;
+	float measured_speed_mibps = 0;
+	bool just_increased = false;
+	bool just_decreased = false;
+	bool additive = false;
+
+	do {
+		if (first) {
+			pkt_size = 0;
+			delay = false;
+		} else if (second) {
+			second = false;
+			pkt_size = 0;
+			delay = false;
+		} else {
+			if (measured_speed_mibps > range_max) {
+				/* We sent too fast. Back off. */
+				if (!delay) {
+					delay_iter = 1000;
+					delay = true;
+				} else {
+					if (additive && just_increased)
+						break;
+					if (additive)
+						delay_iter -= (unsigned int)(delay_iter * .1);
+					else if (just_decreased)
+						delay_iter /= 2;
+					else if (just_increased) {
+						delay_iter -= (unsigned int)(delay_iter * .1);
+						additive = true;
+					} else {
+						printf("error 1");
+						return 0;
+					}
+				}
+				just_decreased = true;
+				just_increased = false;
+			} else if (measured_speed_mibps < range_min) {
+				if (!delay) {
+					/* Go up a size. */
+					pkt_size++;
+					if (pkt_size == sizeof(pkt_sizes)) {
+						printf("Can't send that fast: %s\n", argv[2]);
+						return 0;
+					}
+				} else {
+					if (additive && just_decreased)
+						break;
+					else if (additive)
+						delay_iter += (unsigned int)(delay_iter * .1);
+					else if (just_increased)
+						delay_iter *= 2;
+					else if (just_decreased) {
+						delay_iter += (unsigned int)(delay_iter * .1);
+						additive = true;
+					} else {
+						printf("error 2");
+						return 0;
+					}
+				}
+
+				just_decreased = false;
+				just_increased = true;
+			}
 		}
-		if (delay && i % delay_iter == 0)
-			usleep(10);
-		i++;
+
+		pkt = pkt_sizes[pkt_size];
+		iphdr = (struct ip *)(pkt_sizes[pkt_size] + 34);
+
+		system("bash -c 'while true; do ifconfig | grep ens5 --after-context=8 >> /home/ubuntu/client_ifconfig_calibrate.txt && sleep 1; done' &>/dev/null &");
+
+		clock_t begin = clock();
+		i = 0;
+		while (1) {
+			if (i % 10000 == 0) {
+				double time_spent = (double)(clock() - begin) / CLOCKS_PER_SEC;
+				if (first && time_spent >= 30.0)
+					break;
+				if (!first && time_spent >= 20.0)
+					break;
+			}
+
+			iphdr->ip_src.s_addr = arr[i % 1000];
+			iphdr->ip_sum = 0;
+			iphdr->ip_sum = checksum_ip(iphdr);
+			checksum_l4((uint8_t *)pkt);
+			if (sendto(sockfd, pkt, actual_size[pkt_size], 0,
+					(struct sockaddr*)&socket_address,
+					sizeof(struct sockaddr_ll)) < 0) {
+				printf("Send failed\n");
+			}
+			if (delay && i % delay_iter == 0)
+				usleep(10);
+			i++;
+		}
+
+		system("sudo pkill bash");
+
+		/* Throw out first run. */
+		if (first) {
+			first = false;
+			second = true;
+			continue;
+		}
+
+		char line[256];
+		unsigned long long bytes_measured[128];
+		unsigned int num_bytes_measured = 0;
+		FILE *f = fopen("/home/ubuntu/client_ifconfig_calibrate.txt", "r");
+		while (fgets(line, sizeof(line), f) != NULL) {
+			unsigned int packets;
+			unsigned long long num_bytes;
+			float total;
+			const char *target = "        TX packets";
+			if (strncmp(line, target, strlen(target)) != 0)
+				continue;
+
+			sscanf(line, "        TX packets %u  bytes %llu (%f",
+				&packets, &num_bytes, &total);
+			bytes_measured[num_bytes_measured++] = num_bytes;
+		}
+		fclose(f);
+		remove("/home/ubuntu/client_ifconfig_calibrate.txt");
+
+		unsigned long long total = 0;
+		for (i = 4; i < num_bytes_measured - 4; i++) {
+			total += bytes_measured[i] - bytes_measured[i - 1];
+		}
+		measured_speed_mibps = (total / (num_bytes_measured - 8.)) * 8. / 1024. / 1024;
+
+		if (!delay) {
+			printf("Tried packet size #%u without delay and got %f Mibps\n",
+				pkt_size, measured_speed_mibps);
+		} else {
+			printf("Tried packet size #%u with delay (sleeping every %u iterations) and got %f Mibps\n",
+				pkt_size, delay_iter, measured_speed_mibps);
+		}
+	} while (measured_speed_mibps > range_max || measured_speed_mibps < range_min);
+
+	char pathname[32];
+	snprintf(pathname, sizeof(pathname), "/home/ubuntu/%s", argv[2]);
+	FILE *output = fopen(pathname, "w");
+	if (output == NULL) {
+		perror("fopen");
+		printf("Couldn't open file for writing\n");
+		return 0;
 	}
+	fprintf(output, "%u %u %u\n", pkt_size, delay ? 1 : 0, delay_iter);
+	fclose(output);
 
 	return 0;
 }
