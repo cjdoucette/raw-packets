@@ -399,6 +399,7 @@ int main(int argc, char *argv[])
 	unsigned int pkt_size;
 	unsigned int delay;
 	unsigned int delay_iter;
+	unsigned int sleep_time;
 	snprintf(params_path, sizeof(params_path), "/home/ubuntu/%s", argv[2]);
 	f = fopen(params_path, "r");
 	if (fgets(buffer, sizeof(buffer), f) == NULL) {
@@ -407,7 +408,7 @@ int main(int argc, char *argv[])
 		return 0;
 	}
 	fclose(f);
-	sscanf(buffer, "%u %u %u", &pkt_size, &delay, &delay_iter);
+	sscanf(buffer, "%u %u %u %u", &pkt_size, &delay, &delay_iter, &sleep_time);
 
 	/* Come up with random source addresses. */
 	uint32_t arr[1000];
@@ -437,7 +438,7 @@ int main(int argc, char *argv[])
 			printf("Send failed\n");
 		}
 		if (delay && i % delay_iter == 0)
-			usleep(10);
+			usleep(sleep_time);
 		i++;
 	}
 

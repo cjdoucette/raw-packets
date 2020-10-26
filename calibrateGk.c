@@ -374,6 +374,7 @@ int main(int argc, char *argv[])
 		return 0;
 	}
 	printf("Speed is: %f Mibps\n", speed_mibps);
+	speed_mibps /= 2; // use two senders.
 
 	/* Come up with random source addresses. */
 	uint32_t arr[1000];
@@ -399,7 +400,8 @@ int main(int argc, char *argv[])
 	float measured_speed_mibps = 0;
 	bool just_increased = false;
 	bool just_decreased = false;
-	bool additive = false;
+	bool additive = false; 
+	unsigned int sleep_time = 10;
 
 	do {
 		if (first) {
@@ -419,11 +421,11 @@ int main(int argc, char *argv[])
 					if (additive && just_increased)
 						break;
 					if (additive)
-						delay_iter -= (unsigned int)(delay_iter * .1);
+						delay_iter -= (unsigned int)(delay_iter * .1 + 1);
 					else if (just_decreased)
 						delay_iter /= 2;
 					else if (just_increased) {
-						delay_iter -= (unsigned int)(delay_iter * .1);
+						delay_iter -= (unsigned int)(delay_iter * .1 + 1);
 						additive = true;
 					} else {
 						printf("error 1");
@@ -444,11 +446,11 @@ int main(int argc, char *argv[])
 					if (additive && just_decreased)
 						break;
 					else if (additive)
-						delay_iter += (unsigned int)(delay_iter * .1);
+						delay_iter += (unsigned int)(delay_iter * .1 + 1);
 					else if (just_increased)
 						delay_iter *= 2;
 					else if (just_decreased) {
-						delay_iter += (unsigned int)(delay_iter * .1);
+						delay_iter += (unsigned int)(delay_iter * .1 + 1);
 						additive = true;
 					} else {
 						printf("error 2");
@@ -487,7 +489,7 @@ int main(int argc, char *argv[])
 				printf("Send failed\n");
 			}
 			if (delay && i % delay_iter == 0)
-				usleep(10);
+				usleep(sleep_time);
 			i++;
 		}
 
@@ -542,7 +544,7 @@ int main(int argc, char *argv[])
 		printf("Couldn't open file for writing\n");
 		return 0;
 	}
-	fprintf(output, "%u %u %u\n", pkt_size, delay ? 1 : 0, delay_iter);
+	fprintf(output, "%u %u %u %u\n", pkt_size, delay ? 1 : 0, delay_iter, sleep_time);
 	fclose(output);
 
 	return 0;
