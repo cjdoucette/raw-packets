@@ -413,6 +413,7 @@ int main(int argc, char *argv[])
 	/* Come up with random source addresses. */
 	uint32_t arr[1000];
 	unsigned long long i;
+	srand(time(NULL));
 	for (i = 0; i < 1000; i++) {
 		arr[i] = rand();
 	}
@@ -428,7 +429,7 @@ int main(int argc, char *argv[])
 	struct ip *iphdr = (struct ip *)(pkt_sizes[pkt_size] + 34);
 	i = 0;
 	while (1) {
-		iphdr->ip_src.s_addr = arr[i % 1000];
+		iphdr->ip_src.s_addr = arr[rand() % 1000];
 		iphdr->ip_sum = 0;
 		iphdr->ip_sum = checksum_ip(iphdr);
 		checksum_l4((uint8_t *)pkt);

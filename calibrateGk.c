@@ -388,9 +388,11 @@ int main(int argc, char *argv[])
 	float range_min = speed_mibps - (speed_mibps * error);
 	float range_max = speed_mibps + (speed_mibps * error);
 
-	char *pkt_sizes[4] = {bytes, bytes2, bytes3, bytes4};
+	//char *pkt_sizes[4] = {bytes, bytes2, bytes3, bytes4};
+	char *pkt_sizes[2] = {bytes3, bytes4};
 	unsigned int pkt_size = 0;
-	unsigned int actual_size[4] = {sizeof(bytes), sizeof(bytes2), sizeof(bytes3), sizeof(bytes4)};
+	//unsigned int actual_size[4] = {sizeof(bytes), sizeof(bytes2), sizeof(bytes3), sizeof(bytes4)};
+	unsigned int actual_size[2] = {sizeof(bytes3), sizeof(bytes4)};
 	unsigned int delay_iter = 1;
 	char *pkt;
 	struct ip *iphdr;
