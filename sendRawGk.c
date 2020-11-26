@@ -86,7 +86,7 @@ net_checksum_tcpudp(uint16_t length, uint16_t proto, uint8_t *addrs, uint8_t *bu
 	return net_checksum_finish(sum);
 }
 
-static void
+static uint16_t
 checksum_l4(struct ip *iphdr)
 {
 	int hlen, plen, proto, csum_offset;
@@ -94,7 +94,7 @@ checksum_l4(struct ip *iphdr)
 	uint8_t *data = (uint8_t *)iphdr;
 
 	if ((data[0] & 0xf0) != 0x40)
-		return; /* not IPv4 */
+		return 0; /* not IPv4 */
 	hlen = (data[0] & 0x0f) * 4;
 	plen = (data[2] << 8 | data[3]) - hlen;
 	proto = data[9];
@@ -108,11 +108,11 @@ checksum_l4(struct ip *iphdr)
 		break;
 	default:
 		printf("No checksum\n");
-		return;
+		return 0;
 	}
 
 	if (plen < csum_offset+2)
-		return;
+		return 0;
 
 	data[hlen + csum_offset]   = 0;
 	data[hlen + csum_offset + 1] = 0;
@@ -120,6 +120,7 @@ checksum_l4(struct ip *iphdr)
 		data + 12, data + hlen);
 	data[hlen + csum_offset]   = csum >> 8;
 	data[hlen + csum_offset + 1] = csum & 0xff;
+	return csum;
 }
 
 int main(int argc, char *argv[])
@@ -161,53 +162,6 @@ int main(int argc, char *argv[])
 	socket_address.sll_addr[3] = 0x00;
 	socket_address.sll_addr[4] = 0x00;
 	socket_address.sll_addr[5] = 0x00;
-#if 0
-	char bytes[2048] = {
-		/* Ethernet header. */
-		0x06, 0xa3, 0xa0, 0x16, 0x1f, 0x86, 0x06, 0xdb, 0xde, 0xb0, 0xbb, 0xd0, 0x08, 0x00,
-		/* Outer IP header. */
-		0x45, 0x00, 0x04, 0x33, 0x00, 0x00, 0x00, 0x00, 0x40, 0x04, 0x1c, 0xff, 0xac, 0x1f, 0x00, 0x5f,
-		0xac, 0x1f, 0x01, 0x2b,
-		/* Inner IP header. */
-		0x45, 0x00, 0x04, 0x1f, 0x9c, 0x16, 0x40, 0x00, 0x40, 0x11, 0x3e, 0x52, 0xac, 0x1f, 0x00, 0x5f,
-		0xac, 0x1f, 0x03, 0xc8,
-		/* UDP header. */
-		0xbf, 0x07, 0x1f, 0x90, 0x04, 0x0b, 0xcc, 0xec
-	};
-	size_t header_len = 14 + 20 + 20 + 8;
-
-	char bytes[2048] = {
-		/* Ethernet header. */
-		0x06, 0xa3, 0xa0, 0x16, 0x1f, 0x86, 0x06, 0xdb, 0xde, 0xb0, 0xbb, 0xd0, 0x08, 0x00,
-		/* Outer IP header. */
-		0x45, 0x00, 0x04, 0x4B, 0x00, 0x00, 0x00, 0x00, 0x40, 0x04, 0x1c, 0xff, 0xac, 0x1f, 0x00, 0x5f,
-		0xac, 0x1f, 0x01, 0x2b,
-		/* Inner IP header. */
-		0x45, 0x00, 0x04, 0x37, 0x9c, 0x16, 0x40, 0x00, 0x40, 0x11, 0x3e, 0x52, 0xac, 0x1f, 0x00, 0x5f,
-		0xac, 0x1f, 0x03, 0xc8,
-		// TCP header.									V0x02 for SYN
-
-		0x8e, 0x79, 0x1f, 0x90, 0x68, 0xc3, 0xe1, 0x9b, 0x10, 0x90, 0x14, 0xac, 0x80, 0x18, 0x01, 0xeb,
-		0x60, 0x8f, 0x00, 0x00, 0x01, 0x01, 0x08, 0x0a, 0xc5, 0xd5, 0xc3, 0x70, 0xe4, 0xae, 0xcc, 0x3f
-
-		//0xa2, 0xc9, 0x1f, 0x90, 0x75, 0x8c, 0x48, 0x44, 0x00, 0x00, 0x00, 0x00, 0x05, 0x02, 0xf5, 0x07,
-		//0x5c, 0x94, 0x00, 0x00
-	};
-	size_t header_len = 14 + 20 + 20 + 32;
-
-	/* Read in data from file. */
-	char *data = bytes + header_len;
-	FILE *fp = fopen("text.txt", "r");
-	size_t new_len;
-	if (fp != NULL) {
-		new_len = fread(data, sizeof(char),
-			sizeof(bytes) - header_len, fp) + header_len;
-		if (ferror(fp) != 0) {
-			fputs("Error reading file", stderr);
-		}
-		fclose(fp);
-	}
-#endif
 
 	char bytes[1113] = {
 		0x06, 0xfd, 0x8b, 0xd4, 0xad, 0xda, 0x06, 0xce, 0x68, 0xf2, 0xef, 0x88, 0x08, 0x00,
@@ -337,24 +291,33 @@ int main(int argc, char *argv[])
 		pkt[i + 6] = saddr[i];
 	}
 
-	/* Come up with random source addresses. */
-	uint32_t arr[1000];
-	srand(time(NULL));
-	for (i = 0; i < 1000; i++) {
-		arr[i] = rand();
-	}
-
 	struct ip *outer_iphdr = (struct ip *)(pkt + 14);
 	outer_iphdr->ip_sum = 0;
 	outer_iphdr->ip_sum = checksum_ip(outer_iphdr);
 
 	struct ip *inner_iphdr = (struct ip *)(pkt + 34);
-	i = 0;
-	while (1) {
-		inner_iphdr->ip_src.s_addr = arr[rand() % 1000];
+
+	/* Come up with random source addresses. */
+	uint32_t arr[500];
+	uint16_t ipchk[500];
+	uint16_t tcpchk[500];
+	srand(time(NULL));
+	for (i = 0; i < 500; i++) {
+		arr[i] = rand();
+		inner_iphdr->ip_src.s_addr = arr[i];
 		inner_iphdr->ip_sum = 0;
 		inner_iphdr->ip_sum = checksum_ip(inner_iphdr);
-		checksum_l4(inner_iphdr);
+		ipchk[i] = inner_iphdr->ip_sum;
+		tcpchk[i] = checksum_l4(inner_iphdr);
+	}
+	uint16_t *tcp_cksum = (uint16_t *)(bytes + 70);
+
+	i = 0;
+	while (1) {
+		int r = rand() % 500;
+		inner_iphdr->ip_src.s_addr = arr[r];
+		inner_iphdr->ip_sum = ipchk[r];
+		*tcp_cksum = tcpchk[r];
 		if (sendto(sockfd, pkt, sizeof(bytes), 0,
 				(struct sockaddr*)&socket_address,
 				sizeof(struct sockaddr_ll)) < 0) {
