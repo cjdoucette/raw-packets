@@ -297,12 +297,14 @@ int main(int argc, char *argv[])
 
 	struct ip *inner_iphdr = (struct ip *)(pkt + 34);
 
+	const unsigned int num_flows = 8000; // total of 16000
+
 	/* Come up with random source addresses. */
-	uint32_t arr[500];
-	uint16_t ipchk[500];
-	uint16_t tcpchk[500];
+	uint32_t arr[num_flows];
+	uint16_t ipchk[num_flows];
+	uint16_t tcpchk[num_flows];
 	srand(time(NULL));
-	for (i = 0; i < 500; i++) {
+	for (i = 0; i < num_flows; i++) {
 		arr[i] = rand();
 		inner_iphdr->ip_src.s_addr = arr[i];
 		inner_iphdr->ip_sum = 0;
@@ -314,7 +316,7 @@ int main(int argc, char *argv[])
 
 	i = 0;
 	while (1) {
-		int r = rand() % 500;
+		int r = rand() % num_flows; 
 		inner_iphdr->ip_src.s_addr = arr[r];
 		inner_iphdr->ip_sum = ipchk[r];
 		*tcp_cksum = tcpchk[r];
